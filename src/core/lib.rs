@@ -3,6 +3,7 @@
 
 extern crate alloc;
 
+pub mod buffer;
 pub mod grid;
 
 pub const AETHER_VERSION: &str = "0.1.0";
