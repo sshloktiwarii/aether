@@ -42,7 +42,20 @@ fn fs_crt(@builtin(position) frag_coord: vec4<f32>) -> @location(0) vec4<f32> {
         return vec4<f32>(0.02, 0.02, 0.02, 1.0);
     }
 
-    var color = textureSample(screen_tex, screen_sampler, uv);
+    // Chromatic Aberration
+    var base_color: vec3<f32>;
+    if (crt.chromatic_aberration > 0.0) {
+        let r_offset = vec2<f32>(crt.chromatic_aberration * (uv.x - 0.5), 0.0);
+        let b_offset = -r_offset;
+        let r = textureSample(screen_tex, screen_sampler, uv + r_offset).r;
+        let g = textureSample(screen_tex, screen_sampler, uv).g;
+        let b = textureSample(screen_tex, screen_sampler, uv + b_offset).b;
+        base_color = vec3<f32>(r, g, b);
+    } else {
+        base_color = textureSample(screen_tex, screen_sampler, uv).rgb;
+    }
+
+    var color = vec4<f32>(base_color, 1.0);
 
     // 9-Tap Cross Bloom & Halation
     if (crt.bloom_strength > 0.0) {
