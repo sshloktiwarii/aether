@@ -12,8 +12,8 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test:cargo": "cargo test",
-    "test:bench": "node -e 'console.log(\"Benchmark verification suite\")'",
-    "test": "pnpm test:cargo && pnpm typecheck"
+    "test:bench": "node --experimental-strip-types src/frontend/benchmarks/benchmark.ts",
+    "test": "pnpm test:cargo && pnpm typecheck && pnpm test:bench"
   },
   "dependencies": {},
   "devDependencies": {
