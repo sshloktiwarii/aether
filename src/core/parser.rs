@@ -4,7 +4,44 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 use crate::buffer::ScrollbackBuffer;
-use crate::grid::{Cell, Row};
+use crate::grid::{Cell, Row, FLAG_BOLD, FLAG_ITALIC, FLAG_UNDERLINE, FLAG_INVERSE, FLAG_STRIKETHROUGH, FLAG_BLINK};
+
+pub const ANSI_PALETTE: [u32; 16] = [
+    0x000000FF, // 0: Black
+    0xCC0000FF, // 1: Red
+    0x00CC00FF, // 2: Green
+    0xCCCC00FF, // 3: Yellow
+    0x0000CCFF, // 4: Blue
+    0xCC00CCFF, // 5: Magenta
+    0x00CCCCFF, // 6: Cyan
+    0xCCCCCCFF, // 7: White
+    0x7F7F7FFF, // 8: Bright Black (Gray)
+    0xFF0000FF, // 9: Bright Red
+    0x00FF00FF, // 10: Bright Green
+    0xFFFF00FF, // 11: Bright Yellow
+    0x5C5CFFFF, // 12: Bright Blue
+    0xFF00FFFF, // 13: Bright Magenta
+    0x00FFFFFF, // 14: Bright Cyan
+    0xFFFFFFFF, // 15: Bright White
+];
+
+pub fn color_256_to_rgba(idx: u8) -> u32 {
+    if idx < 16 {
+        return ANSI_PALETTE[idx as usize];
+    }
+    if idx >= 232 {
+        // Grayscale ramp from 232 to 255 (24 steps: 8 to 238)
+        let gray = 8 + (idx - 232) * 10;
+        return Cell::pack_rgba(gray, gray, gray, 255);
+    }
+    // 6x6x6 color cube (16..231)
+    let cube_idx = idx - 16;
+    let b_step = cube_idx % 6;
+    let g_step = (cube_idx / 6) % 6;
+    let r_step = cube_idx / 36;
+    let steps: [u8; 6] = [0, 95, 135, 175, 215, 255];
+    Cell::pack_rgba(steps[r_step as usize], steps[g_step as usize], steps[b_step as usize], 255)
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ParserState {
@@ -715,7 +752,115 @@ impl Terminal {
         }
     }
 
-    pub fn execute_sgr(&mut self, _action: u8) {}
+    pub fn execute_sgr(&mut self, action: u8) {
+        if action != b'm' {
+            return;
+        }
+
+        if self.parser.param_count == 0 {
+            // Empty SGR defaults to reset (0)
+            self.current_fg = Cell::DEFAULT_FG;
+            self.current_bg = Cell::DEFAULT_BG;
+            self.current_flags = 0;
+            self.dirty = true;
+            return;
+        }
+
+        let mut i = 0;
+        while i < self.parser.param_count {
+            let p = self.parser.params[i];
+            match p {
+                0 => {
+                    self.current_fg = Cell::DEFAULT_FG;
+                    self.current_bg = Cell::DEFAULT_BG;
+                    self.current_flags = 0;
+                }
+                1 => self.current_flags |= FLAG_BOLD,
+                2 => {} // Dim (handled via shader or flags)
+                3 => self.current_flags |= FLAG_ITALIC,
+                4 => self.current_flags |= FLAG_UNDERLINE,
+                5 => self.current_flags |= FLAG_BLINK,
+                7 => self.current_flags |= FLAG_INVERSE,
+                9 => self.current_flags |= FLAG_STRIKETHROUGH,
+                22 => self.current_flags &= !FLAG_BOLD,
+                23 => self.current_flags &= !FLAG_ITALIC,
+                24 => self.current_flags &= !FLAG_UNDERLINE,
+                25 => self.current_flags &= !FLAG_BLINK,
+                27 => self.current_flags &= !FLAG_INVERSE,
+                29 => self.current_flags &= !FLAG_STRIKETHROUGH,
+
+                // Standard FG colors
+                30..=37 => {
+                    let idx = (p - 30) as usize;
+                    self.current_fg = ANSI_PALETTE[idx];
+                }
+                39 => self.current_fg = Cell::DEFAULT_FG,
+
+                // Standard BG colors
+                40..=47 => {
+                    let idx = (p - 40) as usize;
+                    self.current_bg = ANSI_PALETTE[idx];
+                }
+                49 => self.current_bg = Cell::DEFAULT_BG,
+
+                // Bright FG colors
+                90..=97 => {
+                    let idx = (p - 90 + 8) as usize;
+                    self.current_fg = ANSI_PALETTE[idx];
+                }
+
+                // Bright BG colors
+                100..=107 => {
+                    let idx = (p - 100 + 8) as usize;
+                    self.current_bg = ANSI_PALETTE[idx];
+                }
+
+                // Extended FG (256-color or TrueColor)
+                38 => {
+                    if i + 1 < self.parser.param_count {
+                        let mode = self.parser.params[i + 1];
+                        if mode == 5 && i + 2 < self.parser.param_count {
+                            // 256-color lookup
+                            let color_idx = (self.parser.params[i + 2] & 0xFF) as u8;
+                            self.current_fg = color_256_to_rgba(color_idx);
+                            i += 2;
+                        } else if mode == 2 && i + 4 < self.parser.param_count {
+                            // 24-bit TrueColor RGB
+                            let r = (self.parser.params[i + 2] & 0xFF) as u8;
+                            let g = (self.parser.params[i + 3] & 0xFF) as u8;
+                            let b = (self.parser.params[i + 4] & 0xFF) as u8;
+                            self.current_fg = Cell::pack_rgba(r, g, b, 255);
+                            i += 4;
+                        }
+                    }
+                }
+
+                // Extended BG (256-color or TrueColor)
+                48 => {
+                    if i + 1 < self.parser.param_count {
+                        let mode = self.parser.params[i + 1];
+                        if mode == 5 && i + 2 < self.parser.param_count {
+                            // 256-color lookup
+                            let color_idx = (self.parser.params[i + 2] & 0xFF) as u8;
+                            self.current_bg = color_256_to_rgba(color_idx);
+                            i += 2;
+                        } else if mode == 2 && i + 4 < self.parser.param_count {
+                            // 24-bit TrueColor RGB
+                            let r = (self.parser.params[i + 2] & 0xFF) as u8;
+                            let g = (self.parser.params[i + 3] & 0xFF) as u8;
+                            let b = (self.parser.params[i + 4] & 0xFF) as u8;
+                            self.current_bg = Cell::pack_rgba(r, g, b, 255);
+                            i += 4;
+                        }
+                    }
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+        self.dirty = true;
+    }
+
     pub fn execute_dec_private_mode(&mut self, _action: u8) {}
     pub fn execute_osc(&mut self) {}
 }
