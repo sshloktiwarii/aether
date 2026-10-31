@@ -44,6 +44,18 @@ fn fs_crt(@builtin(position) frag_coord: vec4<f32>) -> @location(0) vec4<f32> {
 
     var color = textureSample(screen_tex, screen_sampler, uv);
 
+    // 9-Tap Cross Bloom & Halation
+    if (crt.bloom_strength > 0.0) {
+        var bloom = vec3<f32>(0.0);
+        let px = 1.0 / crt.resolution;
+        bloom += textureSample(screen_tex, screen_sampler, uv + vec2<f32>(-2.0 * px.x, 0.0)).rgb * 0.12;
+        bloom += textureSample(screen_tex, screen_sampler, uv + vec2<f32>( 2.0 * px.x, 0.0)).rgb * 0.12;
+        bloom += textureSample(screen_tex, screen_sampler, uv + vec2<f32>(0.0, -2.0 * px.y)).rgb * 0.12;
+        bloom += textureSample(screen_tex, screen_sampler, uv + vec2<f32>(0.0,  2.0 * px.y)).rgb * 0.12;
+        bloom += textureSample(screen_tex, screen_sampler, uv).rgb * 0.52;
+        color = vec4<f32>(color.rgb + bloom * crt.bloom_strength, color.a);
+    }
+
     // Scanlines
     if (crt.scanline_intensity > 0.0) {
         let scanline = sin(uv.y * crt.resolution.y * 3.14159265);
