@@ -85,11 +85,45 @@ export class TextareaShim {
     });
 
     this.textarea.addEventListener('paste', (e) => {
+      e.preventDefault();
       const text = e.clipboardData?.getData('text/plain');
       if (text) {
-        this.onPaste(text);
+        this.handlePasteText(text);
       }
     });
+  }
+
+  public bracketedPaste = false;
+
+  public handlePasteText(text: string): void {
+    const processed = this.bracketedPaste
+      ? `\x1b[200~${text}\x1b[201~`
+      : text;
+    this.onPaste(processed);
+  }
+
+  /**
+   * Copies text to the OS system clipboard.
+   */
+  public async copyTextToClipboard(text: string): Promise<boolean> {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch (err) {
+      console.warn('[AETHER] Clipboard write failed, falling back to execCommand:', err);
+    }
+
+    try {
+      this.textarea.value = text;
+      this.textarea.select();
+      const success = document.execCommand('copy');
+      this.textarea.value = '';
+      return success;
+    } catch {
+      return false;
+    }
   }
 
   public focus(): void {
