@@ -88,3 +88,64 @@ impl ScrollbackBuffer {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_test_row(val: u32) -> Row {
+        let mut row = Row::new(10, Cell::empty());
+        row.cells[0].c = val;
+        row
+    }
+
+    #[test]
+    fn test_scrollback_push_below_capacity() {
+        let mut sb = ScrollbackBuffer::new(5);
+        assert_eq!(sb.len(), 0);
+        assert!(sb.is_empty());
+
+        for i in 0..3 {
+            sb.push(make_test_row(i));
+        }
+
+        assert_eq!(sb.len(), 3);
+        assert_eq!(sb.get_from_top(0).unwrap().cells[0].c, 0);
+        assert_eq!(sb.get_from_top(1).unwrap().cells[0].c, 1);
+        assert_eq!(sb.get_from_top(2).unwrap().cells[0].c, 2);
+
+        assert_eq!(sb.get_from_bottom(0).unwrap().cells[0].c, 2);
+        assert_eq!(sb.get_from_bottom(1).unwrap().cells[0].c, 1);
+        assert_eq!(sb.get_from_bottom(2).unwrap().cells[0].c, 0);
+        assert!(sb.get_from_bottom(3).is_none());
+    }
+
+    #[test]
+    fn test_scrollback_eviction_ring_ordering() {
+        let mut sb = ScrollbackBuffer::new(5);
+        for i in 0..12 {
+            sb.push(make_test_row(i));
+        }
+
+        assert_eq!(sb.len(), 5);
+        // Expect rows 7, 8, 9, 10, 11
+        for i in 0..5 {
+            let expected = (7 + i) as u32;
+            assert_eq!(sb.get_from_top(i).unwrap().cells[0].c, expected);
+        }
+
+        assert_eq!(sb.get_from_bottom(0).unwrap().cells[0].c, 11);
+        assert_eq!(sb.get_from_bottom(4).unwrap().cells[0].c, 7);
+        assert!(sb.get_from_bottom(5).is_none());
+    }
+
+    #[test]
+    fn test_scrollback_clear() {
+        let mut sb = ScrollbackBuffer::new(10);
+        sb.push(make_test_row(42));
+        assert_eq!(sb.len(), 1);
+        sb.clear();
+        assert_eq!(sb.len(), 0);
+        assert!(sb.get_from_top(0).is_none());
+    }
+}
