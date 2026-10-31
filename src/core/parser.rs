@@ -467,7 +467,77 @@ impl Terminal {
         self.dirty = true;
     }
 
-    // Stubs to be completed in Commits 10 - 14
-    pub fn execute_csi(&mut self, _action: u8) {}
+    // Execute CSI action
+    pub fn execute_csi(&mut self, action: u8) {
+        if self.parser.is_private {
+            self.execute_dec_private_mode(action);
+            return;
+        }
+
+        match action {
+            b'A' => {
+                // CUU - Cursor Up
+                let n = self.parser.get_param(0, 1) as usize;
+                self.cursor_y = self.cursor_y.saturating_sub(n);
+                self.dirty = true;
+            }
+            b'B' => {
+                // CUD - Cursor Down
+                let n = self.parser.get_param(0, 1) as usize;
+                self.cursor_y = (self.cursor_y + n).min(self.rows.saturating_sub(1));
+                self.dirty = true;
+            }
+            b'C' => {
+                // CUF - Cursor Forward
+                let n = self.parser.get_param(0, 1) as usize;
+                self.cursor_x = (self.cursor_x + n).min(self.cols.saturating_sub(1));
+                self.dirty = true;
+            }
+            b'D' => {
+                // CUB - Cursor Back
+                let n = self.parser.get_param(0, 1) as usize;
+                self.cursor_x = self.cursor_x.saturating_sub(n);
+                self.dirty = true;
+            }
+            b'E' => {
+                // CNL - Cursor Next Line
+                let n = self.parser.get_param(0, 1) as usize;
+                self.cursor_x = 0;
+                self.cursor_y = (self.cursor_y + n).min(self.rows.saturating_sub(1));
+                self.dirty = true;
+            }
+            b'F' => {
+                // CPL - Cursor Previous Line
+                let n = self.parser.get_param(0, 1) as usize;
+                self.cursor_x = 0;
+                self.cursor_y = self.cursor_y.saturating_sub(n);
+                self.dirty = true;
+            }
+            b'G' | b'`' => {
+                // CHA - Cursor Horizontal Absolute (1-based)
+                let col = self.parser.get_param(0, 1) as usize;
+                self.cursor_x = col.saturating_sub(1).min(self.cols.saturating_sub(1));
+                self.dirty = true;
+            }
+            b'H' | b'f' => {
+                // CUP / HVP - Cursor Position (1-based row, col)
+                let row = self.parser.get_param(0, 1) as usize;
+                let col = self.parser.get_param(1, 1) as usize;
+                self.cursor_y = row.saturating_sub(1).min(self.rows.saturating_sub(1));
+                self.cursor_x = col.saturating_sub(1).min(self.cols.saturating_sub(1));
+                self.dirty = true;
+            }
+            b'd' => {
+                // VPA - Vertical Position Absolute (1-based)
+                let row = self.parser.get_param(0, 1) as usize;
+                self.cursor_y = row.saturating_sub(1).min(self.rows.saturating_sub(1));
+                self.dirty = true;
+            }
+            _ => self.execute_csi_extended(action),
+        }
+    }
+
+    pub fn execute_csi_extended(&mut self, _action: u8) {}
+    pub fn execute_dec_private_mode(&mut self, _action: u8) {}
     pub fn execute_osc(&mut self) {}
 }
