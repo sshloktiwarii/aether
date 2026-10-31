@@ -95,3 +95,34 @@ pub extern "C" fn aether_term_clear_dirty(term: *mut Terminal) {
         term.dirty = false;
     }
 }
+
+#[no_mangle]
+pub extern "C" fn aether_term_update_render_instances(
+    term: *mut Terminal,
+    char_w: f32,
+    char_h: f32,
+) -> u32 {
+    if let Some(term) = unsafe { term.as_mut() } {
+        term.update_render_instances(char_w, char_h)
+    } else {
+        0
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn aether_term_get_instances_ptr(term: *const Terminal) -> *const crate::parser::GpuCellInstance {
+    if let Some(term) = unsafe { term.as_ref() } {
+        term.gpu_instances.as_ptr()
+    } else {
+        core::ptr::null()
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn aether_term_get_instance_count(term: *const Terminal) -> u32 {
+    if let Some(term) = unsafe { term.as_ref() } {
+        term.gpu_instances.len() as u32
+    } else {
+        0
+    }
+}
