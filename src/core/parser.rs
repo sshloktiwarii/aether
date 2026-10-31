@@ -934,3 +934,126 @@ impl Terminal {
         self.parser.osc_buffer.clear();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ascii_and_wrapping() {
+        let mut term = Terminal::new(10, 5, 100);
+        term.write_bytes(b"HELLO");
+        assert_eq!(term.cursor_x, 5);
+        assert_eq!(term.cursor_y, 0);
+        assert_eq!(term.primary_screen[0].cells[0].c, 'H' as u32);
+        assert_eq!(term.primary_screen[0].cells[4].c, 'O' as u32);
+
+        // Wrap to next line
+        term.write_bytes(b"WORLD!");
+        assert_eq!(term.cursor_y, 1);
+        assert_eq!(term.cursor_x, 1);
+    }
+
+    #[test]
+    fn test_c0_controls() {
+        let mut term = Terminal::new(80, 24, 100);
+        term.write_bytes(b"FOO\rBAR");
+        // BAR overwrote FOO at col 0..3
+        assert_eq!(term.primary_screen[0].cells[0].c, 'B' as u32);
+        assert_eq!(term.primary_screen[0].cells[1].c, 'A' as u32);
+        assert_eq!(term.primary_screen[0].cells[2].c, 'R' as u32);
+
+        // Backspace
+        term.write_bytes(b"\x08X");
+        assert_eq!(term.primary_screen[0].cells[2].c, 'X' as u32);
+
+        // Tab
+        term.write_bytes(b"\r\t");
+        assert_eq!(term.cursor_x, 8);
+    }
+
+    #[test]
+    fn test_csi_cursor_movement() {
+        let mut term = Terminal::new(80, 24, 100);
+        term.write_bytes(b"\x1b[10;20H"); // CUP (row 10, col 20) -> 0-indexed 9, 19
+        assert_eq!(term.cursor_y, 9);
+        assert_eq!(term.cursor_x, 19);
+
+        term.write_bytes(b"\x1b[3A"); // CUU 3
+        assert_eq!(term.cursor_y, 6);
+
+        term.write_bytes(b"\x1b[5B"); // CUD 5
+        assert_eq!(term.cursor_y, 11);
+
+        term.write_bytes(b"\x1b[4C"); // CUF 4
+        assert_eq!(term.cursor_x, 23);
+
+        term.write_bytes(b"\x1b[8D"); // CUB 8
+        assert_eq!(term.cursor_x, 15);
+    }
+
+    #[test]
+    fn test_csi_erase_line_and_display() {
+        let mut term = Terminal::new(80, 24, 100);
+        term.write_bytes(b"0123456789\r\x1b[5C\x1b[K"); // Move to col 5, erase to end of line
+        assert_eq!(term.primary_screen[0].cells[4].c, '4' as u32);
+        assert_eq!(term.primary_screen[0].cells[5].c, ' ' as u32);
+
+        // ED 2 (entire screen)
+        term.write_bytes(b"\x1b[2J");
+        assert_eq!(term.primary_screen[0].cells[0].c, ' ' as u32);
+    }
+
+    #[test]
+    fn test_sgr_styling_and_truecolor() {
+        let mut term = Terminal::new(80, 24, 100);
+        // Bold + Italic + Underline
+        term.write_bytes(b"\x1b[1;3;4mTEST\x1b[0m");
+        let cell = term.primary_screen[0].cells[0];
+        assert_eq!(cell.c, 'T' as u32);
+        assert!(cell.has_flag(FLAG_BOLD));
+        assert!(cell.has_flag(FLAG_ITALIC));
+        assert!(cell.has_flag(FLAG_UNDERLINE));
+
+        // 24-bit TrueColor FG: 255, 128, 64 (0xFF8040FF)
+        term.write_bytes(b"\x1b[38;2;255;128;64mZ");
+        let z_cell = term.primary_screen[0].cells[4];
+        assert_eq!(z_cell.c, 'Z' as u32);
+        assert_eq!(z_cell.fg, Cell::pack_rgba(255, 128, 64, 255));
+    }
+
+    #[test]
+    fn test_dec_private_mode_alternate_screen() {
+        let mut term = Terminal::new(80, 24, 100);
+        term.write_bytes(b"PRIMARY_CONTENT");
+        assert_eq!(term.primary_screen[0].cells[0].c, 'P' as u32);
+        assert!(!term.is_alt_screen);
+
+        // Switch to alternate screen (?1049h)
+        term.write_bytes(b"\x1b[?1049hALT_CONTENT");
+        assert!(term.is_alt_screen);
+        assert_eq!(term.alt_screen[0].cells[0].c, 'A' as u32);
+        assert_eq!(term.primary_screen[0].cells[0].c, 'P' as u32);
+
+        // Restore primary screen (?1049l)
+        term.write_bytes(b"\x1b[?1049l");
+        assert!(!term.is_alt_screen);
+        assert_eq!(term.primary_screen[0].cells[0].c, 'P' as u32);
+    }
+
+    #[test]
+    fn test_osc_window_title() {
+        let mut term = Terminal::new(80, 24, 100);
+        term.write_bytes(b"\x1b]0;AETHER_SYSTEMS_TERMINAL\x07");
+        assert_eq!(term.title, "AETHER_SYSTEMS_TERMINAL");
+    }
+
+    #[test]
+    fn test_malformed_escape_recovery() {
+        let mut term = Terminal::new(80, 24, 100);
+        // Feed random escape sequence that is invalid, followed by normal text
+        term.write_bytes(b"\x1b[??999;;;INVALID_mNORMAL");
+        assert_eq!(term.parser.state, ParserState::Ground);
+        assert!(term.cursor_x > 0);
+    }
+}
