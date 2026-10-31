@@ -861,6 +861,46 @@ impl Terminal {
         self.dirty = true;
     }
 
-    pub fn execute_dec_private_mode(&mut self, _action: u8) {}
+    pub fn execute_dec_private_mode(&mut self, action: u8) {
+        let set = match action {
+            b'h' => true,
+            b'l' => false,
+            _ => return,
+        };
+
+        for i in 0..self.parser.param_count {
+            let mode = self.parser.params[i];
+            match mode {
+                1 => self.app_cursor_keys = set,
+                7 => self.auto_wrap = set,
+                25 => self.cursor_visible = set,
+                1049 => {
+                    if set {
+                        if !self.is_alt_screen {
+                            self.saved_x = self.cursor_x;
+                            self.saved_y = self.cursor_y;
+                            let default_cell = Cell::empty();
+                            for row in self.alt_screen.iter_mut() {
+                                row.clear(default_cell);
+                            }
+                            self.is_alt_screen = true;
+                            self.cursor_x = 0;
+                            self.cursor_y = 0;
+                        }
+                    } else {
+                        if self.is_alt_screen {
+                            self.is_alt_screen = false;
+                            self.cursor_x = self.saved_x.min(self.cols.saturating_sub(1));
+                            self.cursor_y = self.saved_y.min(self.rows.saturating_sub(1));
+                        }
+                    }
+                }
+                2004 => self.bracketed_paste = set,
+                _ => {}
+            }
+        }
+        self.dirty = true;
+    }
+
     pub fn execute_osc(&mut self) {}
 }
