@@ -1,0 +1,150 @@
+:root {
+  --bg-primary: #0a0c10;
+  --bg-secondary: #12151c;
+  --border-color: #262c38;
+  --text-primary: #e6edf3;
+  --text-muted: #7d8590;
+  --hazard-amber: #ffc32a;
+  --tactical-green: #00ff66;
+  --tactical-cyan: #38bdf8;
+  --font-mono: "JetBrains Mono", "Cascadia Code", "Fira Code", monospace;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: 100vh;
+}
+
+/* Tactical Swiss Brutalist Header */
+.terminal-hud {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 38px;
+  background-color: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  padding: 0 16px;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.hud-group {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.hud-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  background-color: rgba(255, 195, 42, 0.1);
+  border: 1px solid rgba(255, 195, 42, 0.3);
+  color: var(--hazard-amber);
+  font-weight: 600;
+}
+
+.hud-metric {
+  color: var(--text-muted);
+}
+
+.hud-metric strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.hud-metric.highlight strong {
+  color: var(--tactical-green);
+}
+
+.hud-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hud-btn {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.hud-btn:hover {
+  border-color: var(--hazard-amber);
+  color: var(--hazard-amber);
+}
+
+.hud-btn.active {
+  background-color: var(--hazard-amber);
+  color: #000;
+  border-color: var(--hazard-amber);
+  font-weight: bold;
+}
+
+/* Canvas Viewport */
+.terminal-viewport {
+  position: relative;
+  flex: 1;
+  width: 100%;
+  height: calc(100vh - 38px);
+  background-color: #000;
+  overflow: hidden;
+  cursor: text;
+}
+
+canvas#terminal-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Bottom status bar */
+.terminal-footer {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 24px;
+  background-color: rgba(18, 21, 28, 0.85);
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  font-size: 10px;
+  color: var(--text-muted);
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+  z-index: 5;
+}
