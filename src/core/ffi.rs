@@ -126,3 +126,49 @@ pub extern "C" fn aether_term_get_instance_count(term: *const Terminal) -> u32 {
         0
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::GpuCellInstance;
+    use core::mem::{align_of, size_of};
+
+    #[test]
+    fn test_gpu_instance_layout_48_bytes() {
+        assert_eq!(size_of::<GpuCellInstance>(), 48, "GpuCellInstance must be exactly 48 bytes for WebGPU");
+        assert_eq!(align_of::<GpuCellInstance>(), 4, "Alignment must be 4 bytes");
+    }
+
+    #[test]
+    fn test_ffi_lifecycle_and_pointers() {
+        let term = aether_term_new(80, 24, 100);
+        assert!(!term.is_null());
+
+        let text = b"AETHER WEBGPU\r\n\x1b[32mGREEN\x1b[0m";
+        aether_term_write(term, text.as_ptr(), text.len() as u32);
+
+        let mut cursor_data = [0u32; 3];
+        aether_term_get_cursor(term, cursor_data.as_mut_ptr());
+        assert_eq!(cursor_data[1], 1); // Row 1 after newline
+        assert_eq!(cursor_data[2], 1); // Cursor visible
+
+        let count = aether_term_update_render_instances(term, 10.0, 20.0);
+        assert_eq!(count, 80 * 24);
+
+        let ptr = aether_term_get_instances_ptr(term);
+        assert!(!ptr.is_null());
+
+        let instances = unsafe { core::slice::from_raw_parts(ptr, count as usize) };
+        assert_eq!(instances[0].glyph_index, 'A' as u32);
+        assert_eq!(instances[0].pos_x, 0.0);
+        assert_eq!(instances[0].pos_y, 0.0);
+        assert_eq!(instances[0].size_x, 10.0);
+        assert_eq!(instances[0].size_y, 20.0);
+
+        aether_term_resize(term, 120, 40);
+        let resized_count = aether_term_update_render_instances(term, 10.0, 20.0);
+        assert_eq!(resized_count, 120 * 40);
+
+        aether_term_free(term);
+    }
+}
