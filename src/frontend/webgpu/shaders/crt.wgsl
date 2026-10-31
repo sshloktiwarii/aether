@@ -44,6 +44,26 @@ fn fs_crt(@builtin(position) frag_coord: vec4<f32>) -> @location(0) vec4<f32> {
 
     var color = textureSample(screen_tex, screen_sampler, uv);
 
+    // Scanlines
+    if (crt.scanline_intensity > 0.0) {
+        let scanline = sin(uv.y * crt.resolution.y * 3.14159265);
+        color = vec4<f32>(color.rgb * (1.0 - crt.scanline_intensity * (0.5 * (1.0 + scanline))), color.a);
+    }
+
+    // Aperture Grille / Phosphor Triad
+    if (crt.phosphor_mask > 0.0) {
+        let subpixel = floor(fract(frag_coord.x / 3.0) * 3.0);
+        var mask = vec3<f32>(1.0);
+        if (subpixel == 0.0) {
+            mask = vec3<f32>(1.0, 1.0 - crt.phosphor_mask, 1.0 - crt.phosphor_mask);
+        } else if (subpixel == 1.0) {
+            mask = vec3<f32>(1.0 - crt.phosphor_mask, 1.0, 1.0 - crt.phosphor_mask);
+        } else {
+            mask = vec3<f32>(1.0 - crt.phosphor_mask, 1.0 - crt.phosphor_mask, 1.0);
+        }
+        color = vec4<f32>(color.rgb * mask, color.a);
+    }
+
     // Vignette
     let edge_dist = uv * (1.0 - uv);
     let vignette = clamp(edge_dist.x * edge_dist.y * 30.0, 0.0, 1.0);
