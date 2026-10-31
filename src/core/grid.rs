@@ -122,3 +122,61 @@ impl Row {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core::mem::{align_of, size_of};
+
+    #[test]
+    fn test_cell_memory_layout() {
+        assert_eq!(size_of::<Cell>(), 16, "Cell must be exactly 16 bytes");
+        assert!(align_of::<Cell>() >= 4, "Cell alignment must be at least 4 bytes");
+    }
+
+    #[test]
+    fn test_rgba_pack_unpack() {
+        let packed = Cell::pack_rgba(0xDE, 0xAD, 0xBE, 0xEF);
+        assert_eq!(packed, 0xDEADBEEF);
+        let (r, g, b, a) = Cell::unpack_rgba(packed);
+        assert_eq!(r, 0xDE);
+        assert_eq!(g, 0xAD);
+        assert_eq!(b, 0xBE);
+        assert_eq!(a, 0xEF);
+    }
+
+    #[test]
+    fn test_cell_flags() {
+        let mut cell = Cell::empty();
+        assert_eq!(cell.flags, 0);
+
+        cell.set_flag(FLAG_BOLD);
+        cell.set_flag(FLAG_ITALIC);
+        assert!(cell.has_flag(FLAG_BOLD));
+        assert!(cell.has_flag(FLAG_ITALIC));
+        assert!(!cell.has_flag(FLAG_UNDERLINE));
+
+        cell.clear_flag(FLAG_BOLD);
+        assert!(!cell.has_flag(FLAG_BOLD));
+        assert!(cell.has_flag(FLAG_ITALIC));
+    }
+
+    #[test]
+    fn test_row_operations() {
+        let default_cell = Cell::empty();
+        let mut row = Row::new(80, default_cell);
+        assert_eq!(row.cells.len(), 80);
+        assert!(!row.is_wrapped);
+
+        let mut custom = default_cell;
+        custom.c = 'X' as u32;
+        row.cells[5] = custom;
+        assert_eq!(row.cells[5].c, 'X' as u32);
+
+        row.erase_range(5, 6, default_cell);
+        assert_eq!(row.cells[5].c, ' ' as u32);
+
+        row.resize(120, default_cell);
+        assert_eq!(row.cells.len(), 120);
+    }
+}
