@@ -53,6 +53,9 @@ export class TextareaShim {
     this.textarea.setAttribute('tabindex', '0');
   }
 
+  public isComposing = false;
+  public compositionText = '';
+
   private bindEvents(): void {
     // Focus capture on container click
     this.container.addEventListener('pointerdown', () => {
@@ -60,6 +63,27 @@ export class TextareaShim {
     });
 
     this.textarea.addEventListener('keydown', (e) => this.handleKeyDown(e));
+
+    // IME Composition Lifecycle
+    this.textarea.addEventListener('compositionstart', () => {
+      this.isComposing = true;
+      this.compositionText = '';
+    });
+
+    this.textarea.addEventListener('compositionupdate', (e) => {
+      this.compositionText = e.data || '';
+    });
+
+    this.textarea.addEventListener('compositionend', (e) => {
+      this.isComposing = false;
+      const text = e.data || this.compositionText;
+      if (text) {
+        this.onData(new TextEncoder().encode(text));
+      }
+      this.compositionText = '';
+      this.textarea.value = '';
+    });
+
     this.textarea.addEventListener('paste', (e) => {
       const text = e.clipboardData?.getData('text/plain');
       if (text) {
@@ -86,6 +110,10 @@ export class TextareaShim {
   }
 
   private handleKeyDown(e: KeyboardEvent): void {
+    if (this.isComposing) {
+      return;
+    }
+
     const encoder = new TextEncoder();
 
     // Modifiers
