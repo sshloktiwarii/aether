@@ -1,0 +1,24 @@
+{
+  "name": "@systems-suite/aether",
+  "version": "0.1.0",
+  "private": true,
+  "description": "High-throughput WebGPU Terminal Emulator with pure Rust VT100/ANSI parser",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build:wasm": "cargo build --target wasm32-unknown-unknown --release && mkdir -p public/wasm && cp target/wasm32-unknown-unknown/release/aether_core.wasm public/wasm/aether_core.wasm",
+    "build:web": "vite build",
+    "build": "pnpm build:wasm && pnpm build:web",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test:cargo": "cargo test",
+    "test:bench": "node -e 'console.log(\"Benchmark verification suite\")'",
+    "test": "pnpm test:cargo && pnpm typecheck"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@webgpu/types": "^0.1.54",
+    "typescript": "^5.8.2",
+    "vite": "^6.2.0"
+  }
+}

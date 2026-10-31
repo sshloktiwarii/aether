@@ -1,0 +1,18 @@
+[package]
+name = "aether-core"
+version = "0.1.0"
+edition = "2021"
+authors = ["Aether Systems Engineering Fleet"]
+description = "High-performance VT100/ANSI terminal parser & state machine with zero-copy WebAssembly FFI"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+path = "src/core/lib.rs"
+
+[dependencies]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
