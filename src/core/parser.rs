@@ -902,5 +902,35 @@ impl Terminal {
         self.dirty = true;
     }
 
-    pub fn execute_osc(&mut self) {}
+    pub fn execute_osc(&mut self) {
+        if self.parser.osc_buffer.is_empty() {
+            return;
+        }
+
+        // Find delimiter ';'
+        if let Some(pos) = self.parser.osc_buffer.iter().position(|&b| b == b';') {
+            let cmd_slice = &self.parser.osc_buffer[..pos];
+            let payload_slice = &self.parser.osc_buffer[(pos + 1)..];
+
+            let mut cmd = 0u16;
+            for &b in cmd_slice {
+                if b >= b'0' && b <= b'9' {
+                    cmd = cmd.saturating_mul(10).saturating_add((b - b'0') as u16);
+                }
+            }
+
+            match cmd {
+                0 | 2 => {
+                    // Set window title
+                    if let Ok(title_str) = core::str::from_utf8(payload_slice) {
+                        self.title.clear();
+                        self.title.push_str(title_str);
+                        self.dirty = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        self.parser.osc_buffer.clear();
+    }
 }
