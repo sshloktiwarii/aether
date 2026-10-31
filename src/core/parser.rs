@@ -119,6 +119,23 @@ impl Parser {
     }
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GpuCellInstance {
+    pub pos_x: f32,
+    pub pos_y: f32,
+    pub size_x: f32,
+    pub size_y: f32,
+    pub uv_min_x: f32,
+    pub uv_min_y: f32,
+    pub uv_max_x: f32,
+    pub uv_max_y: f32,
+    pub fg_color: u32,
+    pub bg_color: u32,
+    pub flags: u32,
+    pub glyph_index: u32,
+}
+
 /// Terminal state machine maintaining screen grids, scrollback, and ANSI state.
 pub struct Terminal {
     pub cols: usize,
@@ -147,6 +164,7 @@ pub struct Terminal {
     pub dirty: bool,
     pub parser: Parser,
     pub scroll_offset: usize, // User scroll offset (0 = at bottom)
+    pub gpu_instances: Vec<GpuCellInstance>,
 }
 
 impl Terminal {
@@ -189,6 +207,7 @@ impl Terminal {
             dirty: true,
             parser: Parser::new(),
             scroll_offset: 0,
+            gpu_instances: Vec::with_capacity(cols * rows),
         }
     }
 
@@ -208,6 +227,61 @@ impl Terminal {
         } else {
             &self.primary_screen
         }
+    }
+
+    /// Packs visible terminal cells into contiguous GPU cell instances.
+    pub fn update_render_instances(&mut self, char_w: f32, char_h: f32) -> u32 {
+        self.gpu_instances.clear();
+        let cols = self.cols;
+        let rows = self.rows;
+        let default_cell = Cell::empty();
+        let scroll_offset = self.scroll_offset;
+        let is_alt = self.is_alt_screen;
+        let cursor_visible = self.cursor_visible;
+        let cursor_x = self.cursor_x;
+        let cursor_y = self.cursor_y;
+
+        for y in 0..rows {
+            let pos_y = y as f32 * char_h;
+            for x in 0..cols {
+                let cell = if scroll_offset > 0 && !is_alt {
+                    if y < scroll_offset {
+                        let sb_idx = scroll_offset - 1 - y;
+                        self.scrollback.get_from_bottom(sb_idx).and_then(|r| r.cells.get(x)).copied().unwrap_or(default_cell)
+                    } else {
+                        let primary_idx = y - scroll_offset;
+                        self.primary_screen.get(primary_idx).and_then(|r| r.cells.get(x)).copied().unwrap_or(default_cell)
+                    }
+                } else if is_alt {
+                    self.alt_screen.get(y).and_then(|r| r.cells.get(x)).copied().unwrap_or(default_cell)
+                } else {
+                    self.primary_screen.get(y).and_then(|r| r.cells.get(x)).copied().unwrap_or(default_cell)
+                };
+
+                let pos_x = x as f32 * char_w;
+                let mut flags = cell.flags as u32;
+                if cursor_visible && scroll_offset == 0 && x == cursor_x && y == cursor_y {
+                    flags |= 32; // Cursor bitflag
+                }
+
+                self.gpu_instances.push(GpuCellInstance {
+                    pos_x,
+                    pos_y,
+                    size_x: char_w,
+                    size_y: char_h,
+                    uv_min_x: 0.0,
+                    uv_min_y: 0.0,
+                    uv_max_x: 0.0,
+                    uv_max_y: 0.0,
+                    fg_color: cell.fg,
+                    bg_color: cell.bg,
+                    flags,
+                    glyph_index: cell.c,
+                });
+            }
+        }
+
+        self.gpu_instances.len() as u32
     }
 
     /// Process a stream of raw bytes through the state machine.
