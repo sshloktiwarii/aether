@@ -411,6 +411,49 @@ impl Terminal {
         self.parser.state = ParserState::Ground;
     }
 
+    pub fn resize(&mut self, new_cols: usize, new_rows: usize) {
+        let new_cols = new_cols.max(1);
+        let new_rows = new_rows.max(1);
+        let default_cell = Cell::empty();
+
+        // Resize rows in primary screen
+        for row in self.primary_screen.iter_mut() {
+            row.resize(new_cols, default_cell);
+        }
+        while self.primary_screen.len() < new_rows {
+            self.primary_screen.push(Row::new(new_cols, default_cell));
+        }
+        while self.primary_screen.len() > new_rows {
+            // Evict overflow rows into scrollback
+            if !self.is_alt_screen {
+                let evicted = self.primary_screen.remove(0);
+                self.scrollback.push(evicted);
+            } else {
+                self.primary_screen.remove(0);
+            }
+        }
+
+        // Resize alternate screen
+        for row in self.alt_screen.iter_mut() {
+            row.resize(new_cols, default_cell);
+        }
+        while self.alt_screen.len() < new_rows {
+            self.alt_screen.push(Row::new(new_cols, default_cell));
+        }
+        while self.alt_screen.len() > new_rows {
+            self.alt_screen.remove(0);
+        }
+
+        self.cols = new_cols;
+        self.rows = new_rows;
+        self.scroll_top = 0;
+        self.scroll_bottom = new_rows.saturating_sub(1);
+        self.cursor_x = self.cursor_x.min(new_cols.saturating_sub(1));
+        self.cursor_y = self.cursor_y.min(new_rows.saturating_sub(1));
+        self.scrollback.resize_cols(new_cols, default_cell);
+        self.dirty = true;
+    }
+
     // C0 control code handling
     pub fn handle_c0(&mut self, b: u8) {
         match b {

@@ -4,6 +4,8 @@
 extern crate alloc;
 
 pub mod buffer;
+pub mod ffi;
 pub mod grid;
+pub mod parser;
 
 pub const AETHER_VERSION: &str = "0.1.0";
