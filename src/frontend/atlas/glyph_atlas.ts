@@ -133,6 +133,36 @@ export class GlyphAtlas {
     this.pendingUploads = [];
   }
 
+  /**
+   * Pre-warms the glyph atlas with standard ASCII and box-drawing ranges.
+   * Eliminates runtime rasterization pauses during terminal streaming.
+   */
+  public prewarm(device?: GPUDevice): void {
+    // 1. ASCII printable characters (0x20..=0x7E)
+    for (let cp = 0x20; cp <= 0x7E; cp++) {
+      this.getOrCreateGlyph(cp);
+    }
+
+    // 2. Unicode Box Drawing (U+2500..=U+257F)
+    for (let cp = 0x2500; cp <= 0x257F; cp++) {
+      this.getOrCreateGlyph(cp);
+    }
+
+    // 3. Block Elements (U+2580..=U+259F)
+    for (let cp = 0x2580; cp <= 0x259F; cp++) {
+      this.getOrCreateGlyph(cp);
+    }
+
+    // 4. Powerline Symbols (U+E0A0..=U+E0B3)
+    for (let cp = 0xE0A0; cp <= 0xE0B3; cp++) {
+      this.getOrCreateGlyph(cp);
+    }
+
+    if (device) {
+      this.flush(device);
+    }
+  }
+
   public get occupancy(): number {
     return this.packer.occupancy;
   }
