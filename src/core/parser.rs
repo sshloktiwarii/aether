@@ -537,7 +537,185 @@ impl Terminal {
         }
     }
 
-    pub fn execute_csi_extended(&mut self, _action: u8) {}
+    pub fn execute_csi_extended(&mut self, action: u8) {
+        let default_cell = Cell::empty();
+        let cols = self.cols;
+        let rows_len = self.rows;
+
+        match action {
+            b'J' => {
+                // ED - Erase in Display
+                let mode = self.parser.get_param(0, 0);
+                let cx = self.cursor_x;
+                let cy = self.cursor_y;
+                let rows = self.active_rows_mut();
+
+                match mode {
+                    0 => {
+                        // Cursor to end of display
+                        if cy < rows.len() {
+                            rows[cy].erase_range(cx, cols, default_cell);
+                            for y in (cy + 1)..rows.len() {
+                                rows[y].clear(default_cell);
+                            }
+                        }
+                    }
+                    1 => {
+                        // Start of display to cursor
+                        for y in 0..cy.min(rows.len()) {
+                            rows[y].clear(default_cell);
+                        }
+                        if cy < rows.len() {
+                            rows[cy].erase_range(0, cx + 1, default_cell);
+                        }
+                    }
+                    2 => {
+                        // Entire screen
+                        for row in rows.iter_mut() {
+                            row.clear(default_cell);
+                        }
+                    }
+                    3 => {
+                        // Entire screen + clear scrollback
+                        for row in rows.iter_mut() {
+                            row.clear(default_cell);
+                        }
+                        self.scrollback.clear();
+                    }
+                    _ => {}
+                }
+                self.dirty = true;
+            }
+            b'K' => {
+                // EL - Erase in Line
+                let mode = self.parser.get_param(0, 0);
+                let cx = self.cursor_x;
+                let cy = self.cursor_y;
+                let rows = self.active_rows_mut();
+                if cy < rows.len() {
+                    match mode {
+                        0 => rows[cy].erase_range(cx, cols, default_cell),
+                        1 => rows[cy].erase_range(0, cx + 1, default_cell),
+                        2 => rows[cy].clear(default_cell),
+                        _ => {}
+                    }
+                }
+                self.dirty = true;
+            }
+            b'L' => {
+                // IL - Insert Lines at cursor row
+                let n = self.parser.get_param(0, 1) as usize;
+                let scroll_bottom = self.scroll_bottom;
+                let cy = self.cursor_y;
+                if cy >= self.scroll_top && cy <= scroll_bottom {
+                    let rows = self.active_rows_mut();
+                    for _ in 0..n {
+                        if scroll_bottom < rows.len() {
+                            rows.remove(scroll_bottom);
+                        }
+                        let insert_pos = cy.min(rows.len());
+                        rows.insert(insert_pos, Row::new(cols, default_cell));
+                    }
+                }
+                self.dirty = true;
+            }
+            b'M' => {
+                // DL - Delete Lines at cursor row
+                let n = self.parser.get_param(0, 1) as usize;
+                let scroll_bottom = self.scroll_bottom;
+                let cy = self.cursor_y;
+                if cy >= self.scroll_top && cy <= scroll_bottom {
+                    let rows = self.active_rows_mut();
+                    for _ in 0..n {
+                        if cy < rows.len() {
+                            rows.remove(cy);
+                        }
+                        let insert_pos = scroll_bottom.min(rows.len());
+                        rows.insert(insert_pos, Row::new(cols, default_cell));
+                    }
+                }
+                self.dirty = true;
+            }
+            b'P' => {
+                // DCH - Delete Characters
+                let n = (self.parser.get_param(0, 1) as usize).min(cols);
+                let cx = self.cursor_x;
+                let cy = self.cursor_y;
+                let rows = self.active_rows_mut();
+                if cy < rows.len() && cx < cols {
+                    let row = &mut rows[cy];
+                    for x in cx..(cols.saturating_sub(n)) {
+                        row.cells[x] = row.cells[x + n];
+                    }
+                    for x in (cols.saturating_sub(n))..cols {
+                        row.cells[x] = default_cell;
+                    }
+                }
+                self.dirty = true;
+            }
+            b'X' => {
+                // ECH - Erase Characters
+                let n = self.parser.get_param(0, 1) as usize;
+                let cx = self.cursor_x;
+                let cy = self.cursor_y;
+                let rows = self.active_rows_mut();
+                if cy < rows.len() {
+                    rows[cy].erase_range(cx, cx + n, default_cell);
+                }
+                self.dirty = true;
+            }
+            b'@' => {
+                // ICH - Insert Characters
+                let n = (self.parser.get_param(0, 1) as usize).min(cols);
+                let cx = self.cursor_x;
+                let cy = self.cursor_y;
+                let rows = self.active_rows_mut();
+                if cy < rows.len() && cx < cols {
+                    let row = &mut rows[cy];
+                    for x in (cx + n..cols).rev() {
+                        row.cells[x] = row.cells[x - n];
+                    }
+                    for x in cx..(cx + n).min(cols) {
+                        row.cells[x] = default_cell;
+                    }
+                }
+                self.dirty = true;
+            }
+            b'S' => {
+                // SU - Scroll Up
+                let n = self.parser.get_param(0, 1) as usize;
+                self.scroll_up_region(n);
+            }
+            b'T' => {
+                // SD - Scroll Down
+                let n = self.parser.get_param(0, 1) as usize;
+                self.scroll_down_region(n);
+            }
+            b'r' => {
+                // DECSTBM - Set Scrolling Region Top/Bottom (1-based)
+                let top = (self.parser.get_param(0, 1) as usize).saturating_sub(1);
+                let bottom = if self.parser.param_count > 1 && self.parser.params[1] > 0 {
+                    (self.parser.params[1] as usize).saturating_sub(1).min(rows_len.saturating_sub(1))
+                } else {
+                    rows_len.saturating_sub(1)
+                };
+
+                if top < bottom {
+                    self.scroll_top = top;
+                    self.scroll_bottom = bottom;
+                } else {
+                    self.scroll_top = 0;
+                    self.scroll_bottom = rows_len.saturating_sub(1);
+                }
+                self.cursor_x = 0;
+                self.cursor_y = 0;
+                self.dirty = true;
+            }
+            _ => self.execute_sgr(action),
+        }
+    }
+
+    pub fn execute_sgr(&mut self, _action: u8) {}
     pub fn execute_dec_private_mode(&mut self, _action: u8) {}
     pub fn execute_osc(&mut self) {}
 }
