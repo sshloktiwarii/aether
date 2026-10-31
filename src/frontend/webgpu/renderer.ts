@@ -15,7 +15,7 @@ export class TerminalRenderer {
   public pipeline: TerminalPipeline;
 
   public instanceBuffer: GPUBuffer | null = null;
-  public instanceCapacity = 16384; // 16K instances (can hold up to ~200 cols x 80 rows)
+  public instanceCapacity = 32768; // Pre-allocate 32K instances (handles up to 240 cols x 136 rows = ~32,640 cells)
 
   constructor(
     device: GPUDevice,
@@ -33,6 +33,13 @@ export class TerminalRenderer {
     this.pipeline.init(device, targetFormat, this.uniforms, atlas);
 
     this.ensureInstanceBuffer(this.instanceCapacity);
+  }
+
+  /**
+   * Pre-warms instance buffer to guarantee 10,000+ glyph single-pass drawing.
+   */
+  public prepareHighThroughputBatch(cellCount = 10400): void {
+    this.ensureInstanceBuffer(cellCount);
   }
 
   /**
