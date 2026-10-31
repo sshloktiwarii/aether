@@ -374,10 +374,100 @@ impl Terminal {
         self.parser.state = ParserState::Ground;
     }
 
-    // Stubs to be completed in Commits 09 - 14
-    pub fn handle_c0(&mut self, _b: u8) {}
+    // C0 control code handling
+    pub fn handle_c0(&mut self, b: u8) {
+        match b {
+            0x00 => {} // NUL - ignore
+            0x07 => {
+                // BEL - Terminal bell
+                self.dirty = true;
+            }
+            0x08 => {
+                // BS - Backspace
+                self.cursor_x = self.cursor_x.saturating_sub(1);
+                self.dirty = true;
+            }
+            0x09 => {
+                // HT - Horizontal Tab (8-column tabstops)
+                let next_tab = (self.cursor_x + 8) & !7;
+                self.cursor_x = next_tab.min(self.cols.saturating_sub(1));
+                self.dirty = true;
+            }
+            0x0A | 0x0B | 0x0C => {
+                // LF / VT / FF - Line Feed
+                self.line_feed();
+            }
+            0x0D => {
+                // CR - Carriage Return
+                self.cursor_x = 0;
+                self.dirty = true;
+            }
+            _ => {}
+        }
+    }
+
+    pub fn line_feed(&mut self) {
+        if self.cursor_y == self.scroll_bottom {
+            self.scroll_up_region(1);
+        } else if self.cursor_y < self.rows.saturating_sub(1) {
+            self.cursor_y += 1;
+        }
+        self.dirty = true;
+    }
+
+    pub fn scroll_up_region(&mut self, count: usize) {
+        let scroll_top = self.scroll_top;
+        let scroll_bottom = self.scroll_bottom;
+        let count = count.min(scroll_bottom.saturating_sub(scroll_top) + 1);
+        if count == 0 {
+            return;
+        }
+
+        let is_full_screen = scroll_top == 0 && scroll_bottom == self.rows.saturating_sub(1);
+        let default_cell = Cell::empty();
+        let cols = self.cols;
+
+        for _ in 0..count {
+            if is_full_screen && !self.is_alt_screen {
+                // Evict top row into scrollback
+                let evicted = self.primary_screen.remove(0);
+                self.scrollback.push(evicted);
+                self.primary_screen.push(Row::new(cols, default_cell));
+            } else {
+                let rows = self.active_rows_mut();
+                if scroll_top < rows.len() {
+                    rows.remove(scroll_top);
+                    let insert_pos = scroll_bottom.min(rows.len());
+                    rows.insert(insert_pos, Row::new(cols, default_cell));
+                }
+            }
+        }
+        self.dirty = true;
+    }
+
+    pub fn scroll_down_region(&mut self, count: usize) {
+        let scroll_top = self.scroll_top;
+        let scroll_bottom = self.scroll_bottom;
+        let count = count.min(scroll_bottom.saturating_sub(scroll_top) + 1);
+        if count == 0 {
+            return;
+        }
+
+        let default_cell = Cell::empty();
+        let cols = self.cols;
+        let rows = self.active_rows_mut();
+
+        for _ in 0..count {
+            if scroll_bottom < rows.len() {
+                rows.remove(scroll_bottom);
+            }
+            let insert_pos = scroll_top.min(rows.len());
+            rows.insert(insert_pos, Row::new(cols, default_cell));
+        }
+        self.dirty = true;
+    }
+
+    // Stubs to be completed in Commits 10 - 14
     pub fn execute_csi(&mut self, _action: u8) {}
     pub fn execute_osc(&mut self) {}
-    pub fn line_feed(&mut self) {}
-    pub fn scroll_down_region(&mut self, _count: usize) {}
 }
