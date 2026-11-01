@@ -67,6 +67,9 @@ pub struct Parser {
     pub intermediates: [u8; 4],
     pub intermediates_len: usize,
     pub osc_buffer: Vec<u8>,
+    pub utf8_buf: [u8; 4],
+    pub utf8_len: usize,
+    pub utf8_expected: usize,
 }
 
 impl Parser {
@@ -81,6 +84,9 @@ impl Parser {
             intermediates: [0; 4],
             intermediates_len: 0,
             osc_buffer: Vec::with_capacity(256),
+            utf8_buf: [0; 4],
+            utf8_len: 0,
+            utf8_expected: 0,
         }
     }
 
@@ -302,13 +308,59 @@ impl Terminal {
 
         match self.parser.state {
             ParserState::Ground => {
-                if b >= 0x20 && b <= 0x7E {
+                if self.parser.utf8_expected > 0 {
+                    // Accumulating continuation bytes for multi-byte UTF-8 sequence
+                    // Continuation bytes must have the format 10xxxxxx (0x80..=0xBF)
+                    if (b & 0xC0) != 0x80 {
+                        // Bad continuation byte: emit replacement character U+FFFD and reset UTF-8 state
+                        self.print_char(0xFFFD);
+                        self.parser.utf8_len = 0;
+                        self.parser.utf8_expected = 0;
+                        // Reprocess current byte from Ground state
+                        if b >= 0x20 && b <= 0x7E {
+                            self.print_char(b as u32);
+                        } else if b < 0x20 {
+                            self.handle_c0(b);
+                        } else {
+                            self.print_char(0xFFFD);
+                        }
+                    } else {
+                        self.parser.utf8_buf[self.parser.utf8_len] = b;
+                        self.parser.utf8_len += 1;
+                        if self.parser.utf8_len == self.parser.utf8_expected {
+                            if let Ok(s) = core::str::from_utf8(&self.parser.utf8_buf[..self.parser.utf8_len]) {
+                                if let Some(ch) = s.chars().next() {
+                                    self.print_char(ch as u32);
+                                }
+                            } else {
+                                self.print_char(0xFFFD);
+                            }
+                            self.parser.utf8_len = 0;
+                            self.parser.utf8_expected = 0;
+                        }
+                    }
+                } else if b >= 0x20 && b <= 0x7E {
                     self.print_char(b as u32);
                 } else if b < 0x20 {
                     self.handle_c0(b);
                 } else {
-                    // High-byte / UTF-8 basic print
-                    self.print_char(b as u32);
+                    // Multi-byte UTF-8 lead byte detection
+                    if (b & 0xE0) == 0xC0 {
+                        self.parser.utf8_buf[0] = b;
+                        self.parser.utf8_len = 1;
+                        self.parser.utf8_expected = 2;
+                    } else if (b & 0xF0) == 0xE0 {
+                        self.parser.utf8_buf[0] = b;
+                        self.parser.utf8_len = 1;
+                        self.parser.utf8_expected = 3;
+                    } else if (b & 0xF8) == 0xF0 {
+                        self.parser.utf8_buf[0] = b;
+                        self.parser.utf8_len = 1;
+                        self.parser.utf8_expected = 4;
+                    } else {
+                        // Invalid standalone byte in Ground: emit replacement character
+                        self.print_char(0xFFFD);
+                    }
                 }
             }
             ParserState::Escape => {
@@ -1172,5 +1224,42 @@ mod tests {
         term.write_bytes(b"\x1b[??999;;;INVALID_mNORMAL");
         assert_eq!(term.parser.state, ParserState::Ground);
         assert!(term.cursor_x > 0);
+    }
+
+    #[test]
+    fn test_utf8_multibyte_and_split_boundaries() {
+        let mut term = Terminal::new(80, 24, 100);
+
+        // Test 1: é (2-byte UTF-8: 0xC3 0xA9)
+        term.process_byte(0xC3);
+        term.process_byte(0xA9);
+        assert_eq!(term.primary_screen[0].cells[0].c, 'é' as u32);
+
+        // Test 2: 日本 (3-byte UTF-8 each: 日 = 0xE6 0x97 0xA5, 本 = 0xE6 0x9C 0xAC)
+        let ni = [0xE6, 0x97, 0xA5];
+        for b in ni {
+            term.process_byte(b);
+        }
+        assert_eq!(term.primary_screen[0].cells[1].c, '日' as u32);
+
+        let hon = [0xE6, 0x9C, 0xAC];
+        for b in hon {
+            term.process_byte(b);
+        }
+        assert_eq!(term.primary_screen[0].cells[2].c, '本' as u32);
+
+        // Test 3: 😀 (4-byte UTF-8: 0xF0 0x9F 0x98 0x80)
+        let grin = [0xF0, 0x9F, 0x98, 0x80];
+        for b in grin {
+            term.process_byte(b);
+        }
+        assert_eq!(term.primary_screen[0].cells[3].c, '😀' as u32);
+
+        // Test 4: Bad continuation byte recovery (0xC3 followed by ASCII 'A')
+        term.process_byte(0xC3);
+        term.process_byte(b'A');
+        // 0xC3 with bad continuation emits replacement char U+FFFD, then 'A'
+        assert_eq!(term.primary_screen[0].cells[4].c, 0xFFFD);
+        assert_eq!(term.primary_screen[0].cells[5].c, 'A' as u32);
     }
 }
